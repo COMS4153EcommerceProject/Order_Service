@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 from datetime import datetime, date
 from pydantic import BaseModel, Field, EmailStr
 
-from SimpleMicroservices.models.order import OrderBase
+from models.order import OrderBase
 
 
 class UserBase(BaseModel):
