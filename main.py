@@ -1,152 +1,133 @@
 from __future__ import annotations
 import os
-import socket
-from datetime import datetime
 from typing import Dict, List, Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Query, Path, status
+from fastapi import FastAPI, HTTPException, Query
 
-from models.user import UserCreate, UserRead, UserUpdate
 from models.order import OrderCreate, OrderRead, OrderUpdate
-from models.health import Health
+from models.payment import PaymentCreate, PaymentRead, PaymentUpdate
+from models.order_detail import OrderDetailCreate, OrderDetailRead, OrderDetailUpdate
+
+from resources.order_resource import OrderResource
+from resources.payment_resource import PaymentResource
+from resources.order_detail_resource import OrderDetailResource
 
 port = int(os.environ.get("FASTAPIPORT", 8000))
 
-# --------------------------------------------------------------------------
-# In-memory "databases"
-# --------------------------------------------------------------------------
-users: Dict[UUID, UserRead] = {}
-orders: Dict[UUID, OrderRead] = {}
-
 app = FastAPI(
-    title="User/Order API",
-    description="Demo FastAPI app using Pydantic v2 models for User and Order",
+    title="Order Management API",
+    description="Microservice for managing user orders, payments, and order details",
     version="0.1.0",
 )
-
-# --------------------------------------------------------------------------
-# Health endpoints
-# --------------------------------------------------------------------------
-# def make_health(echo: Optional[str], path_echo: Optional[str] = None) -> Health:
-#     return Health(
-#         status=200,
-#         status_message="OK",
-#         timestamp=datetime.utcnow().isoformat() + "Z",
-#         ip_address=socket.gethostbyname(socket.gethostname()),
-#         echo=echo,
-#         path_echo=path_echo
-#     )
-#
-# @app.get("/health", response_model=Health)
-# def get_health_no_path(echo: str | None = Query(None)):
-#     return make_health(echo=echo, path_echo=None)
-#
-# @app.get("/health/{path_echo}", response_model=Health)
-# def get_health_with_path(
-#     path_echo: str = Path(...),
-#     echo: str | None = Query(None),
-# ):
-#     return make_health(echo=echo, path_echo=path_echo)
 
 # --------------------------------------------------------------------------
 # Order endpoints
 # --------------------------------------------------------------------------
 @app.post("/orders", response_model=OrderRead, status_code=201)
 def create_order(order: OrderCreate):
-    order_read = OrderRead(**order.model_dump())
-    orders[order_read.id] = order_read
-    return order_read
+    """Create a new order"""
+    return OrderResource.create_order(order)
 
 @app.get("/orders", response_model=List[OrderRead])
 def list_orders(
-    item: Optional[str] = Query(None),
-    status: Optional[str] = Query(None),
+    user_id: Optional[UUID] = Query(None, description="Filter by user ID"),
+    status: Optional[str] = Query(None, description="Filter by order status"),
 ):
-    results = list(orders.values())
-    if item is not None:
-        results = [o for o in results if o.item == item]
-    if status is not None:
-        results = [o for o in results if o.status == status]
-    return results
+    """Get all orders with optional filtering"""
+    return OrderResource.get_orders(user_id=user_id, status=status)
 
 @app.get("/orders/{order_id}", response_model=OrderRead)
 def get_order(order_id: UUID):
-    if order_id not in orders:
-        raise HTTPException(status_code=404, detail="Order not found")
-    return orders[order_id]
+    """Get a specific order by ID"""
+    return OrderResource.get_order(order_id)
 
-@app.patch("/orders/{order_id}", response_model=OrderRead)
+@app.put("/orders/{order_id}", response_model=OrderRead)
 def update_order(order_id: UUID, update: OrderUpdate):
-    if order_id not in orders:
-        raise HTTPException(status_code=404, detail="Order not found")
-    stored = orders[order_id].model_dump()
-    stored.update(update.model_dump(exclude_unset=True))
-    orders[order_id] = OrderRead(**stored)
-    return orders[order_id]
+    """Update an existing order"""
+    return OrderResource.update_order(order_id, update)
 
 @app.delete("/orders/{order_id}", response_model=OrderRead)
 def delete_order(order_id: UUID):
-    if order_id not in orders:
-        raise HTTPException(status_code=404, detail="Order not found")
-    removed = orders.pop(order_id)
-    return removed
-# --------------------------------------------------------------------------
-# User endpoints
-# --------------------------------------------------------------------------
-@app.post("/users", response_model=UserRead, status_code=201)
-def create_user(user: UserCreate):
-    user_read = UserRead(**user.model_dump())
-    users[user_read.id] = user_read
-    return user_read
+    """Delete an order"""
+    return OrderResource.delete_order(order_id)
 
-@app.get("/users", response_model=List[UserRead])
-def list_users(
-    first_name: Optional[str] = Query(None),
-    last_name: Optional[str] = Query(None),
-    email: Optional[str] = Query(None),
+# --------------------------------------------------------------------------
+# Payment endpoints
+# --------------------------------------------------------------------------
+@app.post("/payments", response_model=PaymentRead, status_code=201)
+def create_payment(payment: PaymentCreate):
+    """Create a new payment"""
+    return PaymentResource.create_payment(payment)
+
+@app.get("/payments", response_model=List[PaymentRead])
+def list_payments(
+    order_id: Optional[UUID] = Query(None, description="Filter by order ID"),
+    payment_method: Optional[str] = Query(None, description="Filter by payment method"),
 ):
-    results = list(users.values())
-    if first_name is not None:
-        results = [u for u in results if u.first_name == first_name]
-    if last_name is not None:
-        results = [u for u in results if u.last_name == last_name]
-    if email is not None:
-        results = [u for u in results if u.email == email]
-    return results
+    """Get all payments with optional filtering"""
+    return PaymentResource.get_payments(order_id=order_id, payment_method=payment_method)
 
-@app.get("/users/{user_id}", response_model=UserRead)
-def get_user(user_id: UUID):
-    if user_id not in users:
-        raise HTTPException(status_code=404, detail="User not found")
-    return users[user_id]
+@app.get("/payments/{payment_id}", response_model=PaymentRead)
+def get_payment(payment_id: UUID):
+    """Get a specific payment by ID"""
+    return PaymentResource.get_payment(payment_id)
 
-@app.patch("/users/{user_id}", response_model=UserRead)
-def update_user(user_id: UUID, update: UserUpdate):
-    if user_id not in users:
-        raise HTTPException(status_code=404, detail="User not found")
-    stored = users[user_id].model_dump()
-    stored.update(update.model_dump(exclude_unset=True))
-    users[user_id] = UserRead(**stored)
-    return users[user_id]
+@app.put("/payments/{payment_id}", response_model=PaymentRead)
+def update_payment(payment_id: UUID, update: PaymentUpdate):
+    """Update an existing payment"""
+    return PaymentResource.update_payment(payment_id, update)
 
-@app.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_user(user_id: UUID):
-    if user_id not in users:
-        raise HTTPException(status_code=404, detail="User not found")
-    del users[user_id]
-    return None
+@app.delete("/payments/{payment_id}", response_model=PaymentRead)
+def delete_payment(payment_id: UUID):
+    """Delete a payment"""
+    return PaymentResource.delete_payment(payment_id)
+
+# --------------------------------------------------------------------------
+# Order Detail endpoints
+# --------------------------------------------------------------------------
+@app.post("/order-details", response_model=OrderDetailRead, status_code=201)
+def create_order_detail(order_detail: OrderDetailCreate):
+    """Create a new order detail"""
+    return OrderDetailResource.create_order_detail(order_detail)
+
+@app.get("/order-details", response_model=List[OrderDetailRead])
+def list_order_details(
+    order_id: Optional[UUID] = Query(None, description="Filter by order ID"),
+    prod_id: Optional[UUID] = Query(None, description="Filter by product ID"),
+):
+    """Get all order details with optional filtering"""
+    return OrderDetailResource.get_order_details(order_id=order_id, prod_id=prod_id)
+
+@app.get("/order-details/{order_id}/{prod_id}", response_model=OrderDetailRead)
+def get_order_detail(order_id: UUID, prod_id: UUID):
+    """Get a specific order detail by composite key (order_id, prod_id)"""
+    return OrderDetailResource.get_order_detail(order_id, prod_id)
+
+@app.put("/order-details/{order_id}/{prod_id}", response_model=OrderDetailRead)
+def update_order_detail(order_id: UUID, prod_id: UUID, update: OrderDetailUpdate):
+    """Update an existing order detail"""
+    return OrderDetailResource.update_order_detail(order_id, prod_id, update)
+
+@app.delete("/order-details/{order_id}/{prod_id}", response_model=OrderDetailRead)
+def delete_order_detail(order_id: UUID, prod_id: UUID):
+    """Delete an order detail"""
+    return OrderDetailResource.delete_order_detail(order_id, prod_id)
+
 # --------------------------------------------------------------------------
 # Root
 # --------------------------------------------------------------------------
 @app.get("/")
 def root():
-    return {"message": "Welcome to the User/Order API. See /docs for OpenAPI UI."}
+    return {
+        "message": "Welcome to the Order Management API. See /docs for OpenAPI UI.",
+        "version": "0.1.0",
+        "entities": ["orders", "payments", "order-details"]
+    }
 
 # --------------------------------------------------------------------------
 # Entrypoint
 # --------------------------------------------------------------------------
-# check for image
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
