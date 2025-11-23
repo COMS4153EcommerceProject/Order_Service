@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional
+from typing import Optional, Dict
 from uuid import UUID
 from datetime import datetime
 from pydantic import BaseModel, Field
@@ -106,6 +106,16 @@ class OrderDetailRead(OrderDetailBase):
         description="Last update timestamp (UTC).",
         json_schema_extra={"example": "2025-01-16T12:00:00Z"},
     )
+    links: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Relative path links to related resources.",
+        json_schema_extra={
+            "example": {
+                "self": "/order-details/660e8400-e29b-41d4-a716-446655440001/770e8400-e29b-41d4-a716-446655440002",
+                "order": "/orders/660e8400-e29b-41d4-a716-446655440001"
+            }
+        }
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -117,6 +127,10 @@ class OrderDetailRead(OrderDetailBase):
                     "subtotal": 199.98,
                     "created_at": "2025-01-16T10:20:30Z",
                     "updated_at": "2025-01-16T12:00:00Z",
+                    "links": {
+                        "self": "/order-details/660e8400-e29b-41d4-a716-446655440001/770e8400-e29b-41d4-a716-446655440002",
+                        "order": "/orders/660e8400-e29b-41d4-a716-446655440001"
+                    }
                 }
             ]
         }
