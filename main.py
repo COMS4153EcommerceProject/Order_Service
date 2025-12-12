@@ -4,7 +4,8 @@ from typing import Dict, List, Optional
 from uuid import UUID
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException, Query, Header
+
+from fastapi import FastAPI, HTTPException, Query, Header, Request, Depends
 from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
@@ -18,14 +19,74 @@ from resources.order_detail_resource import OrderDetailResource
 from utils.etag import generate_etag, etag_match
 from services.order_processing_service import OrderProcessingService
 
-port = int(os.environ.get("FASTAPIPORT", 8000))
+import jwt
+from jwt import PyJWK
+import time
+import requests
+
+port = int(os.environ.get("FASTAPIPORT", 8002))
+# --------------------------------------------------------------------------
+# JWT validation
+# --------------------------------------------------------------------------
+
+JWKS_URL = os.environ.get("JWKS_URL", "http://localhost:3000/.well-known/jwks.json")
+JWKS_CACHE = {}  # kid -> public key
+JWKS_CACHE_TIMESTAMP = 0
+JWKS_CACHE_TTL = 300  # 5分钟
+
+ALGORITHM = "RS256"
+AUDIENCE = "local-api"
+
+
+def get_public_key(kid: str):
+    global JWKS_CACHE, JWKS_CACHE_TIMESTAMP
+
+    # 缓存过期或者缓存未命中
+    if time.time() - JWKS_CACHE_TIMESTAMP > JWKS_CACHE_TTL or kid not in JWKS_CACHE:
+        try:
+            jwks = requests.get(JWKS_URL).json()
+            JWKS_CACHE = {}
+            for key_dict in jwks.get("keys", []):
+                jwk_obj = PyJWK.from_dict(key_dict)
+                JWKS_CACHE[key_dict["kid"]] = jwk_obj.key
+            JWKS_CACHE_TIMESTAMP = time.time()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to fetch JWKS: {str(e)}")
+
+    public_key = JWKS_CACHE.get(kid)
+    if public_key is None:
+        raise HTTPException(status_code=401, detail=f"Public key not found for kid: {kid}")
+
+    return public_key
+
+
+def verify_jwt(request: Request):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+
+    token = auth_header.split()[1]
+
+    try:
+        # 获取 header
+        unverified_header = jwt.get_unverified_header(token)
+        kid = unverified_header.get("kid")
+        public_key = get_public_key(kid)
+
+        payload = jwt.decode(token, public_key, algorithms=[ALGORITHM], audience=AUDIENCE)
+        return payload
+    except jwt.PyJWTError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"JWT verification error: {str(e)}")
+
 
 app = FastAPI(
     title="Order Management API",
     description="Microservice for managing user orders, payments, and order details",
     version="0.1.0",
+    dependencies=[Depends(verify_jwt)]
 )
-
 # --------------------------------------------------------------------------
 # Order endpoints
 # --------------------------------------------------------------------------
