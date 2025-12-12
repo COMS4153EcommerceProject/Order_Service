@@ -24,6 +24,10 @@ from jwt import PyJWK
 import time
 import requests
 
+from google.cloud import pubsub_v1
+import json
+import os
+
 port = int(os.environ.get("FASTAPIPORT", 8002))
 # --------------------------------------------------------------------------
 # JWT validation
@@ -80,6 +84,23 @@ def verify_jwt(request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"JWT verification error: {str(e)}")
 
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT")
+TOPIC_ID = "order-events"
+
+publisher = pubsub_v1.PublisherClient()
+topic_path = publisher.topic_path(PROJECT_ID, TOPIC_ID)
+
+def publish_order_event(order):
+    data_str = json.dumps({
+        "order_id": str(order.order_id),
+        "user_id": str(order.user_id),
+        "total_price": order.total_price,
+        "status": order.status
+    })
+    data_bytes = data_str.encode("utf-8")
+    future = publisher.publish(topic_path, data=data_bytes)
+    print(f"Published message ID: {future.result()}")
+
 
 app = FastAPI(
     title="Order Management API",
@@ -96,7 +117,12 @@ def create_order(order: OrderCreate):
     new_order = OrderResource.create_order(order)
     etag = generate_etag(new_order)
     location = new_order.links.get("self", f"/orders/{new_order.order_id}")
-    
+
+    try:
+        publish_order_event(new_order)
+    except Exception as e:
+        print(f"Failed to publish order event: {str(e)}")
+
     return JSONResponse(
         content=new_order.model_dump(mode='json'),
         status_code=201,
