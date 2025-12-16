@@ -87,7 +87,7 @@ def verify_jwt(request: Request):
 
 
 
-PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT")
+PROJECT_ID = "aurora-coms4153-project"
 TOPIC_ID = "order-events"
 
 publisher = pubsub_v1.PublisherClient()
