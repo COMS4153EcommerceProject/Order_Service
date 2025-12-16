@@ -106,8 +106,8 @@ def publish_order_event(order):
 app = FastAPI(
     title="Order Management API",
     description="Microservice for managing user orders, payments, and order details",
-    version="0.1.0"
-    # dependencies=[Depends(verify_jwt)]
+    version="0.1.0",
+    dependencies=[Depends(verify_jwt)]
 )
 
 
