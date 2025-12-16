@@ -78,7 +78,7 @@ def verify_jwt(request: Request):
             PUBLIC_KEY,
             algorithms=[ALGORITHM],
             audience=AUDIENCE,
-            issuer="http://localhost:3000",
+            issuer="https://auth-service-1056727803439.us-east4.run.app",
         )
         return payload
 
