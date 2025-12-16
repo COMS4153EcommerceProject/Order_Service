@@ -2,13 +2,10 @@ from __future__ import annotations
 import os
 from typing import Dict, List, Optional
 from uuid import UUID
-import time
-import requests
-
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Query, Header, Request, Depends
 from fastapi.responses import JSONResponse
-from jwt import PyJWK
 from starlette.responses import Response
 
 from models.order import OrderCreate, OrderRead, OrderUpdate
@@ -21,6 +18,20 @@ from resources.order_detail_resource import OrderDetailResource
 from utils.etag import generate_etag, etag_match
 from services.order_processing_service import OrderProcessingService
 
+import jwt
+from jwt import PyJWK
+import time
+import requests
+
+from google.cloud import pubsub_v1
+import json
+import os
+
+port = int(os.environ.get("FASTAPIPORT", 8002))
+# --------------------------------------------------------------------------
+# JWT validation
+# --------------------------------------------------------------------------
+
 JWKS_URL = os.environ.get("JWKS_URL", "http://localhost:3000/.well-known/jwks.json")
 JWKS_CACHE = {}  # kid -> public key
 JWKS_CACHE_TIMESTAMP = 0
@@ -28,10 +39,12 @@ JWKS_CACHE_TTL = 300  # 5分钟
 
 ALGORITHM = "RS256"
 AUDIENCE = "local-api"
+
+
 def get_public_key(kid: str):
     global JWKS_CACHE, JWKS_CACHE_TIMESTAMP
 
-
+    # 缓存过期或者缓存未命中
     if time.time() - JWKS_CACHE_TIMESTAMP > JWKS_CACHE_TTL or kid not in JWKS_CACHE:
         try:
             jwks = requests.get(JWKS_URL).json()
@@ -69,25 +82,54 @@ def verify_jwt(request: Request):
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"JWT verification error: {str(e)}")
-port = int(os.environ.get("FASTAPIPORT", 8000))
+
+
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT")
+TOPIC_ID = "order-events"
+
+publisher = pubsub_v1.PublisherClient()
+topic_path = publisher.topic_path(PROJECT_ID, TOPIC_ID)
+
+
+def publish_order_event(order):
+    data_str = json.dumps({
+        "order_id": str(order.order_id),
+        "user_id": str(order.user_id),
+        "total_price": order.total_price,
+        "status": order.status
+    })
+    data_bytes = data_str.encode("utf-8")
+    future = publisher.publish(topic_path, data=data_bytes)
+    print(f"Published message ID: {future.result()}")
+
 
 app = FastAPI(
     title="Order Management API",
     description="Microservice for managing user orders, payments, and order details",
-    version="0.1.0",
-    dependencies=[Depends(verify_jwt)]
+    version="0.1.0"
+    # dependencies=[Depends(verify_jwt)]
 )
 
 
 # --------------------------------------------------------------------------
 # Order endpoints
 # --------------------------------------------------------------------------
+@app.get("/healthz")
+def healthz():
+    return {"ok": True}
+
+
 @app.post("/orders", response_model=OrderRead, status_code=201)
 def create_order(order: OrderCreate):
     """Create a new order"""
     new_order = OrderResource.create_order(order)
     etag = generate_etag(new_order)
     location = new_order.links.get("self", f"/orders/{new_order.order_id}")
+
+    try:
+        publish_order_event(new_order)
+    except Exception as e:
+        print(f"Failed to publish order event: {str(e)}")
 
     return JSONResponse(
         content=new_order.model_dump(mode='json'),
