@@ -31,7 +31,7 @@ port = int(os.environ.get("FASTAPIPORT", 8002))
 # --------------------------------------------------------------------------
 # JWT validation
 # --------------------------------------------------------------------------
-JWKS_URL = "https://<auth-cloud-run-url>/.well-known/jwks.json"
+JWKS_URL = "https://auth-service-1056727803439.us-east4.run.app/.well-known/jwks.json"
 jwks_client = PyJWKClient(JWKS_URL)
 ISSUER = "https://auth-service-1056727803439.us-east4.run.app"
 ALGORITHM = "RS256"
