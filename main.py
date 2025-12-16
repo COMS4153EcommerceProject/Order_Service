@@ -19,7 +19,7 @@ from utils.etag import generate_etag, etag_match
 from services.order_processing_service import OrderProcessingService
 
 import jwt
-from jwt import PyJWK
+from jwt import PyJWKClient
 import time
 import requests
 
@@ -31,14 +31,9 @@ port = int(os.environ.get("FASTAPIPORT", 8002))
 # --------------------------------------------------------------------------
 # JWT validation
 # --------------------------------------------------------------------------
-PUBLIC_KEY = os.environ.get("JWT_PUBLIC_KEY")
-if not PUBLIC_KEY:
-    raise RuntimeError("JWT_PUBLIC_KEY not set")
-# JWKS_URL = os.environ.get("JWKS_URL", "http://localhost:3000/.well-known/jwks.json")
-# JWKS_CACHE = {}  # kid -> public key
-# JWKS_CACHE_TIMESTAMP = 0
-# JWKS_CACHE_TTL = 300  # 5分钟
-#
+JWKS_URL = "https://<auth-cloud-run-url>/.well-known/jwks.json"
+jwks_client = PyJWKClient(JWKS_URL)
+ISSUER = "https://auth-service-1056727803439.us-east4.run.app"
 ALGORITHM = "RS256"
 AUDIENCE = "local-api"
 #
@@ -73,17 +68,22 @@ def verify_jwt(request: Request):
     token = auth_header.split()[1]
 
     try:
+        signing_key = jwks_client.get_signing_key_from_jwt(token).key
+
         payload = jwt.decode(
             token,
-            PUBLIC_KEY,
+            signing_key,
             algorithms=[ALGORITHM],
             audience=AUDIENCE,
-            issuer="https://auth-service-1056727803439.us-east4.run.app",
+            issuer=ISSUER,
         )
         return payload
 
     except jwt.PyJWTError as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"JWT verification error: {str(e)}")
 
 
 
