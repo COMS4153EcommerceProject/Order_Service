@@ -111,6 +111,10 @@ app = FastAPI(
 # --------------------------------------------------------------------------
 # Order endpoints
 # --------------------------------------------------------------------------
+@app.get("/healthz")
+def healthz():
+    return {"ok": True}
+
 @app.post("/orders", response_model=OrderRead, status_code=201)
 def create_order(order: OrderCreate):
     """Create a new order"""
