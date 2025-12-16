@@ -31,36 +31,38 @@ port = int(os.environ.get("FASTAPIPORT", 8002))
 # --------------------------------------------------------------------------
 # JWT validation
 # --------------------------------------------------------------------------
-
-JWKS_URL = os.environ.get("JWKS_URL", "http://localhost:3000/.well-known/jwks.json")
-JWKS_CACHE = {}  # kid -> public key
-JWKS_CACHE_TIMESTAMP = 0
-JWKS_CACHE_TTL = 300  # 5分钟
-
+PUBLIC_KEY = os.environ.get("JWT_PUBLIC_KEY")
+if not PUBLIC_KEY:
+    raise RuntimeError("JWT_PUBLIC_KEY not set")
+# JWKS_URL = os.environ.get("JWKS_URL", "http://localhost:3000/.well-known/jwks.json")
+# JWKS_CACHE = {}  # kid -> public key
+# JWKS_CACHE_TIMESTAMP = 0
+# JWKS_CACHE_TTL = 300  # 5分钟
+#
 ALGORITHM = "RS256"
 AUDIENCE = "local-api"
-
-
-def get_public_key(kid: str):
-    global JWKS_CACHE, JWKS_CACHE_TIMESTAMP
-
-    # 缓存过期或者缓存未命中
-    if time.time() - JWKS_CACHE_TIMESTAMP > JWKS_CACHE_TTL or kid not in JWKS_CACHE:
-        try:
-            jwks = requests.get(JWKS_URL).json()
-            JWKS_CACHE = {}
-            for key_dict in jwks.get("keys", []):
-                jwk_obj = PyJWK.from_dict(key_dict)
-                JWKS_CACHE[key_dict["kid"]] = jwk_obj.key
-            JWKS_CACHE_TIMESTAMP = time.time()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to fetch JWKS: {str(e)}")
-
-    public_key = JWKS_CACHE.get(kid)
-    if public_key is None:
-        raise HTTPException(status_code=401, detail=f"Public key not found for kid: {kid}")
-
-    return public_key
+#
+#
+# def get_public_key(kid: str):
+#     global JWKS_CACHE, JWKS_CACHE_TIMESTAMP
+#
+#     # 缓存过期或者缓存未命中
+#     if time.time() - JWKS_CACHE_TIMESTAMP > JWKS_CACHE_TTL or kid not in JWKS_CACHE:
+#         try:
+#             jwks = requests.get(JWKS_URL).json()
+#             JWKS_CACHE = {}
+#             for key_dict in jwks.get("keys", []):
+#                 jwk_obj = PyJWK.from_dict(key_dict)
+#                 JWKS_CACHE[key_dict["kid"]] = jwk_obj.key
+#             JWKS_CACHE_TIMESTAMP = time.time()
+#         except Exception as e:
+#             raise HTTPException(status_code=500, detail=f"Failed to fetch JWKS: {str(e)}")
+#
+#     public_key = JWKS_CACHE.get(kid)
+#     if public_key is None:
+#         raise HTTPException(status_code=401, detail=f"Public key not found for kid: {kid}")
+#
+#     return public_key
 
 
 def verify_jwt(request: Request):
@@ -71,17 +73,18 @@ def verify_jwt(request: Request):
     token = auth_header.split()[1]
 
     try:
-        # 获取 header
-        unverified_header = jwt.get_unverified_header(token)
-        kid = unverified_header.get("kid")
-        public_key = get_public_key(kid)
-
-        payload = jwt.decode(token, public_key, algorithms=[ALGORITHM], audience=AUDIENCE)
+        payload = jwt.decode(
+            token,
+            PUBLIC_KEY,
+            algorithms=[ALGORITHM],
+            audience=AUDIENCE,
+            issuer="http://localhost:3000",
+        )
         return payload
+
     except jwt.PyJWTError as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"JWT verification error: {str(e)}")
+
 
 
 PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT")
@@ -106,8 +109,8 @@ def publish_order_event(order):
 app = FastAPI(
     title="Order Management API",
     description="Microservice for managing user orders, payments, and order details",
-    version="0.1.0",
-    dependencies=[Depends(verify_jwt)]
+    version="0.1.0"
+    # dependencies=[Depends(verify_jwt)]
 )
 
 
@@ -120,7 +123,7 @@ def healthz():
 
 
 @app.post("/orders", response_model=OrderRead, status_code=201)
-def create_order(order: OrderCreate):
+def create_order(order: OrderCreate, user=Depends(verify_jwt)):
     """Create a new order"""
     new_order = OrderResource.create_order(order)
     etag = generate_etag(new_order)
