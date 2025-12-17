@@ -7,6 +7,7 @@ from datetime import datetime
 from fastapi import FastAPI, HTTPException, Query, Header, Request, Depends
 from fastapi.responses import JSONResponse
 from starlette.responses import Response
+from fastapi.middleware.cors import CORSMiddleware
 
 from models.order import OrderCreate, OrderRead, OrderUpdate
 from models.payment import PaymentCreate, PaymentRead, PaymentUpdate
@@ -113,6 +114,13 @@ app = FastAPI(
     # dependencies=[Depends(verify_jwt)]
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],        # 先调通
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],        # 关键：允许 Authorization / Content-Type
+)
 
 # --------------------------------------------------------------------------
 # Order endpoints
@@ -447,5 +455,6 @@ def root():
 # --------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
+
 
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
